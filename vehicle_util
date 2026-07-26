@@ -1,0 +1,52 @@
+from extensions import mysql
+from dataclasses import dataclass
+from typing import Callable, Optional
+
+
+@dataclass(frozen=True)
+class SearchField:
+    key: str
+    label: str
+    query: Optional[str] = None  # None for static (non-db-backed) fields like sold_status
+    transform: Optional[Callable] = None
+    options: Optional[tuple] = None  # pre-set options for static fields
+
+
+class VehicleSearchFields:
+    def __init__(self):
+        self.manufacturer = SearchField('manufacturer', 'Vehicle make',
+                                        "SELECT manufacturer FROM Manufacturer ORDER BY manufacturer;")
+
+        self.vehicle_type = SearchField('vehicle_type', 'Vehicle type',
+                                        "SELECT vehicle_type FROM VehicleType ORDER BY vehicle_type;")
+
+        self.model_year = SearchField('model_year', 'Model year',
+                                      "SELECT DISTINCT(model_year) FROM Vehicle ORDER BY model_year;")
+
+        self.fuel_type = SearchField('fuel_type', 'Fuel type',
+                                     "SELECT fuel_type FROM FuelType ORDER BY fuel_type;")
+
+        self.color = SearchField('color', 'Color',
+                                 "SELECT color FROM Color ORDER BY color;",
+                                 transform=str.title)
+
+        self.sold_status = SearchField('sold_status', 'Sold status', options=('Sold', 'Unsold'))
+
+    def _db_backed_fields(self):
+        return [self.manufacturer, self.vehicle_type, self.model_year, self.fuel_type, self.color]
+
+    def get_dropdown_data(self, include_sold_status=False):
+        data = []
+        with mysql.connection.cursor() as cur:
+            for f in self._db_backed_fields():
+                cur.execute(f.query)
+                rows = [row[0] for row in cur.fetchall()]
+                data.append((f.key, f.label, [f.transform(v) for v in rows] if f.transform else rows))
+        if include_sold_status:
+            data.append((self.sold_status.key, self.sold_status.label, self.sold_status.options))
+        return data
+
+
+VEHICLE_SEARCH_FIELDS = VehicleSearchFields()  # module-level singleton, created once 
+            
+  
